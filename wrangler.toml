@@ -8,4 +8,4 @@ crons = ["0 13 * * *"]
 
 [[kv_namespaces]]
 binding = "POSTS_KV"
-id = "REEMPLAZAR_CON_TU_KV_NAMESPACE_ID"
+id = "01c9107a2a9c460cb18c36e9d0541153"
