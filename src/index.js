@@ -1,15 +1,27 @@
 export default {
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(handleDailyPost(env));
+    ctx.waitUntil(
+      handleDailyPost(env).catch((err) => {
+        console.error("handleDailyPost failed:", err);
+      })
+    );
   },
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === "/approve") {
-      return handleApprove(request, env);
+      if (request.method === "POST") {
+        return handleApproveConfirm(request, env);
+      }
+      return handleApprovePreview(request, env);
     }
     if (url.pathname === "/trigger-test") {
-      await handleDailyPost(env);
-      return new Response("Post de prueba generado y enviado a tu correo.");
+      try {
+        await handleDailyPost(env);
+        return new Response("Post de prueba generado y enviado a tu correo.");
+      } catch (err) {
+        console.error("trigger-test failed:", err);
+        return new Response(`Error generando el post de prueba: ${err.message}`, { status: 500 });
+      }
     }
     return new Response("MyActif Social Agent activo.");
   }
@@ -60,6 +72,15 @@ const CATEGORIES = [
     dato: "Los asesores inmobiliarios están entre los perfiles más expuestos a agresión en citas de trabajo."
   }
 ];
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 async function handleDailyPost(env) {
   const today = new Date();
@@ -115,14 +136,22 @@ Escribe el post de hoy.`;
   });
 
   const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(`Anthropic API error (${response.status}): ${data.error?.message || JSON.stringify(data)}`);
+  }
+
   const textBlock = data.content?.find((b) => b.type === "text");
-  return textBlock ? textBlock.text.trim() : "Error generando el post.";
+  if (!textBlock) {
+    throw new Error("Respuesta de Anthropic sin bloque de texto utilizable.");
+  }
+  return textBlock.text.trim();
 }
 
 async function sendApprovalEmail(env, draft, categoryName, token) {
   const approveUrl = `${env.WORKER_URL}/approve?token=${token}`;
 
-  await fetch("https://api.resend.com/emails", {
+  const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${env.RESEND_API_KEY}`,
@@ -133,35 +162,83 @@ async function sendApprovalEmail(env, draft, categoryName, token) {
       to: env.APPROVER_EMAIL,
       subject: `Post de hoy — ${categoryName}`,
       html: `
-        <h2>Categoría: ${categoryName}</h2>
-        <p style="white-space:pre-line;font-family:sans-serif">${draft}</p>
-        <p><a href="${approveUrl}" style="background:#2F69D5;color:white;padding:10px 20px;text-decoration:none;border-radius:6px;">Aprobar y publicar</a></p>
+        <h2>Categoría: ${escapeHtml(categoryName)}</h2>
+        <p style="white-space:pre-line;font-family:sans-serif">${escapeHtml(draft)}</p>
+        <p><a href="${approveUrl}" style="background:#2F69D5;color:white;padding:10px 20px;text-decoration:none;border-radius:6px;">Revisar y aprobar</a></p>
         <p style="color:#888;font-size:12px">Si no apruebas en 3 días, el post expira.</p>
       `
     })
   });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(`Resend API error (${response.status}): ${data.message || JSON.stringify(data)}`);
+  }
 }
 
-async function handleApprove(request, env) {
+async function getDraft(env, token) {
+  if (!token) return null;
+  const raw = await env.POSTS_KV.get(`draft:${token}`);
+  return raw ? JSON.parse(raw) : null;
+}
+
+function htmlPage(body) {
+  return new Response(
+    `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:sans-serif;max-width:560px;margin:40px auto;padding:0 16px;">${body}</body></html>`,
+    { headers: { "Content-Type": "text/html; charset=utf-8" } }
+  );
+}
+
+// GET /approve — muestra una vista previa y pide confirmación explícita antes de publicar.
+// No publica en este paso: algunos clientes de correo (Outlook Safe Links, escáneres
+// corporativos) siguen automáticamente los links de un email por seguridad, y si el GET
+// publicara directamente el post se publicaría solo sin que nadie hiciera clic.
+async function handleApprovePreview(request, env) {
   const url = new URL(request.url);
   const token = url.searchParams.get("token");
   if (!token) return new Response("Falta token", { status: 400 });
 
-  const raw = await env.POSTS_KV.get(`draft:${token}`);
-  if (!raw) return new Response("Post no encontrado o expirado", { status: 404 });
+  const draft = await getDraft(env, token);
+  if (!draft) return new Response("Post no encontrado o expirado", { status: 404 });
 
-  const draft = JSON.parse(raw);
   if (draft.status === "published") {
-    return new Response("Este post ya fue publicado.");
+    return htmlPage(`<p>Este post ya fue publicado el ${escapeHtml(draft.publishedAt)}.</p>`);
   }
 
-  await publishToFacebook(env, draft.text);
+  return htmlPage(`
+    <h2>Categoría: ${escapeHtml(draft.category)}</h2>
+    <p style="white-space:pre-line">${escapeHtml(draft.text)}</p>
+    <form method="POST" action="/approve?token=${encodeURIComponent(token)}">
+      <button type="submit" style="background:#2F69D5;color:white;padding:10px 20px;border:none;border-radius:6px;font-size:16px;cursor:pointer;">Confirmar y publicar en Facebook</button>
+    </form>
+  `);
+}
+
+// POST /approve — publica de verdad, solo tras confirmación explícita del usuario.
+async function handleApproveConfirm(request, env) {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token");
+  if (!token) return new Response("Falta token", { status: 400 });
+
+  const draft = await getDraft(env, token);
+  if (!draft) return new Response("Post no encontrado o expirado", { status: 404 });
+
+  if (draft.status === "published") {
+    return htmlPage(`<p>Este post ya fue publicado.</p>`);
+  }
+
+  try {
+    await publishToFacebook(env, draft.text);
+  } catch (err) {
+    console.error("publishToFacebook failed:", err);
+    return htmlPage(`<p>No se pudo publicar en Facebook: ${escapeHtml(err.message)}</p><p>El post sigue pendiente, puedes intentar de nuevo.</p>`);
+  }
 
   draft.status = "published";
   draft.publishedAt = new Date().toISOString();
   await env.POSTS_KV.put(`draft:${token}`, JSON.stringify(draft));
 
-  return new Response("Post publicado en MyActif. Ya puedes cerrar esta pestaña.");
+  return htmlPage(`<p>Post publicado en MyActif. Ya puedes cerrar esta pestaña.</p>`);
 }
 
 async function publishToFacebook(env, message) {
@@ -173,5 +250,12 @@ async function publishToFacebook(env, message) {
       access_token: env.FB_PAGE_ACCESS_TOKEN
     })
   });
-  return res.json();
+
+  const data = await res.json();
+
+  if (!res.ok || data.error) {
+    throw new Error(data.error?.message || `Facebook API error (${res.status})`);
+  }
+
+  return data;
 }
