@@ -18,7 +18,7 @@ async function loadGoogleFont(text) {
   ).text();
 
   const fonts = [];
-  const regex = /font-weight:\s*(\d+);[\s\S]*?src:\s*url\(([^)]+)\)\s*format\('(?:truetype|opentype)'\)/g;
+  const regex = /font-weight:\s*(\d+);[\s\S]*?src:\s*url\(([^)]+)\)\s*format\('(?:truetype|opentype|woff)'\)/g;
   let match;
   while ((match = regex.exec(css))) {
     const weight = Number(match[1]);
