@@ -1,3 +1,5 @@
+import { generateBrandImage } from "./image.js";
+
 export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(
@@ -13,6 +15,9 @@ export default {
         return handleApproveConfirm(request, env);
       }
       return handleApprovePreview(request, env);
+    }
+    if (url.pathname === "/image") {
+      return handleImage(request, env);
     }
     if (url.pathname === "/trigger-test") {
       try {
@@ -182,6 +187,22 @@ async function getDraft(env, token) {
   return raw ? JSON.parse(raw) : null;
 }
 
+// El GANCHO es la línea corta y directa — es lo único que cabe legible en la
+// tarjeta de marca. DATO y CTA se quedan en el texto del post/caption.
+function extractHook(text) {
+  const match = text.match(/GANCHO:\s*([\s\S]*?)(?:\n\s*DATO:|$)/i);
+  return match ? match[1].trim() : text.trim();
+}
+
+async function handleImage(request, env) {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token");
+  const draft = await getDraft(env, token);
+  if (!draft) return new Response("Post no encontrado o expirado", { status: 404 });
+
+  return generateBrandImage(extractHook(draft.text));
+}
+
 function htmlPage(body) {
   return new Response(
     `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:sans-serif;max-width:560px;margin:40px auto;padding:0 16px;">${body}</body></html>`,
@@ -209,7 +230,7 @@ async function handleApprovePreview(request, env) {
     <h2>Categoría: ${escapeHtml(draft.category)}</h2>
     <p style="white-space:pre-line">${escapeHtml(draft.text)}</p>
     <form method="POST" action="/approve?token=${encodeURIComponent(token)}">
-      <button type="submit" style="background:#2F69D5;color:white;padding:10px 20px;border:none;border-radius:6px;font-size:16px;cursor:pointer;">Confirmar y publicar en Facebook</button>
+      <button type="submit" style="background:#2F69D5;color:white;padding:10px 20px;border:none;border-radius:6px;font-size:16px;cursor:pointer;">Confirmar y publicar</button>
     </form>
   `);
 }
@@ -227,18 +248,31 @@ async function handleApproveConfirm(request, env) {
     return htmlPage(`<p>Este post ya fue publicado.</p>`);
   }
 
+  const imageUrl = `${env.WORKER_URL}/image?token=${encodeURIComponent(token)}`;
+  const caption = stripLabels(draft.text);
+
   try {
-    await publishToFacebook(env, stripLabels(draft.text));
+    await publishToFacebook(env, imageUrl, caption);
   } catch (err) {
     console.error("publishToFacebook failed:", err);
     return htmlPage(`<p>No se pudo publicar en Facebook: ${escapeHtml(err.message)}</p><p>El post sigue pendiente, puedes intentar de nuevo.</p>`);
+  }
+
+  let instagramNote = "";
+  if (env.IG_USER_ID) {
+    try {
+      await publishToInstagram(env, imageUrl, caption);
+    } catch (err) {
+      console.error("publishToInstagram failed:", err);
+      instagramNote = `<p>Facebook sí se publicó, pero Instagram falló: ${escapeHtml(err.message)}</p>`;
+    }
   }
 
   draft.status = "published";
   draft.publishedAt = new Date().toISOString();
   await env.POSTS_KV.put(`draft:${token}`, JSON.stringify(draft));
 
-  return htmlPage(`<p>Post publicado en MyActif. Ya puedes cerrar esta pestaña.</p>`);
+  return htmlPage(`<p>Post publicado en MyActif. Ya puedes cerrar esta pestaña.</p>${instagramNote}`);
 }
 
 // Las etiquetas GANCHO/DATO/CTA son solo para que el aprobador vea la estructura
@@ -251,12 +285,13 @@ function stripLabels(text) {
     .trim();
 }
 
-async function publishToFacebook(env, message) {
-  const res = await fetch(`https://graph.facebook.com/v19.0/${env.FB_PAGE_ID}/feed`, {
+async function publishToFacebook(env, imageUrl, caption) {
+  const res = await fetch(`https://graph.facebook.com/v19.0/${env.FB_PAGE_ID}/photos`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      message,
+      url: imageUrl,
+      caption,
       access_token: env.FB_PAGE_ACCESS_TOKEN
     })
   });
@@ -268,4 +303,54 @@ async function publishToFacebook(env, message) {
   }
 
   return data;
+}
+
+// Instagram requiere dos pasos: crear el contenedor de media y luego publicarlo.
+// El contenedor a veces tarda un momento en procesarse, así que se hace un
+// pequeño poll de su estado antes de intentar publicar.
+async function publishToInstagram(env, imageUrl, caption) {
+  const createRes = await fetch(`https://graph.facebook.com/v19.0/${env.IG_USER_ID}/media`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      image_url: imageUrl,
+      caption,
+      access_token: env.FB_PAGE_ACCESS_TOKEN
+    })
+  });
+
+  const createData = await createRes.json();
+  if (!createRes.ok || createData.error) {
+    throw new Error(createData.error?.message || `Instagram API error (${createRes.status})`);
+  }
+
+  const creationId = createData.id;
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const statusRes = await fetch(
+      `https://graph.facebook.com/v19.0/${creationId}?fields=status_code&access_token=${env.FB_PAGE_ACCESS_TOKEN}`
+    );
+    const statusData = await statusRes.json();
+    if (statusData.status_code === "FINISHED") break;
+    if (statusData.status_code === "ERROR") {
+      throw new Error("Instagram no pudo procesar la imagen del contenedor de media.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+
+  const publishRes = await fetch(`https://graph.facebook.com/v19.0/${env.IG_USER_ID}/media_publish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      creation_id: creationId,
+      access_token: env.FB_PAGE_ACCESS_TOKEN
+    })
+  });
+
+  const publishData = await publishRes.json();
+  if (!publishRes.ok || publishData.error) {
+    throw new Error(publishData.error?.message || `Instagram publish error (${publishRes.status})`);
+  }
+
+  return publishData;
 }
