@@ -1,7 +1,7 @@
 import { ImageResponse } from "workers-og";
 
-const NAVY = "#0F1E3C";
-const GOLD = "#D4AF37";
+const BLUE = "#3D5FE0";
+const ORANGE = "#E8784A";
 
 // Satori (usado por workers-og) no tiene acceso a fuentes del sistema —
 // hay que traerlas nosotros. Google sirve TTF en vez de WOFF2 si el
@@ -41,7 +41,7 @@ export async function generateBrandImage(hookText) {
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          backgroundColor: NAVY,
+          backgroundColor: BLUE,
           padding: "70px",
           fontFamily: "Poppins"
         },
@@ -51,12 +51,20 @@ export async function generateBrandImage(hookText) {
             props: {
               style: {
                 display: "flex",
+                alignItems: "baseline",
                 fontSize: "44px",
-                fontWeight: 700,
-                color: GOLD,
-                letterSpacing: "2px"
+                letterSpacing: "1px"
               },
-              children: "MyActif"
+              children: [
+                {
+                  type: "span",
+                  props: { style: { color: "#FFFFFF", fontWeight: 400 }, children: "My" }
+                },
+                {
+                  type: "span",
+                  props: { style: { color: "#FFFFFF", fontWeight: 700 }, children: "Actif" }
+                }
+              ]
             }
           },
           {
@@ -90,12 +98,23 @@ export async function generateBrandImage(hookText) {
             props: {
               style: {
                 display: "flex",
-                fontSize: "30px",
-                fontWeight: 400,
-                color: GOLD,
                 justifyContent: "center"
               },
-              children: "myactif.com · Diagnóstico gratuito"
+              children: {
+                type: "div",
+                props: {
+                  style: {
+                    display: "flex",
+                    backgroundColor: ORANGE,
+                    color: "#FFFFFF",
+                    fontSize: "28px",
+                    fontWeight: 700,
+                    padding: "16px 32px",
+                    borderRadius: "999px"
+                  },
+                  children: "myactif.com · Diagnóstico gratuito"
+                }
+              }
             }
           }
         ]
