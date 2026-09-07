@@ -228,7 +228,7 @@ async function handleApproveConfirm(request, env) {
   }
 
   try {
-    await publishToFacebook(env, draft.text);
+    await publishToFacebook(env, stripLabels(draft.text));
   } catch (err) {
     console.error("publishToFacebook failed:", err);
     return htmlPage(`<p>No se pudo publicar en Facebook: ${escapeHtml(err.message)}</p><p>El post sigue pendiente, puedes intentar de nuevo.</p>`);
@@ -239,6 +239,16 @@ async function handleApproveConfirm(request, env) {
   await env.POSTS_KV.put(`draft:${token}`, JSON.stringify(draft));
 
   return htmlPage(`<p>Post publicado en MyActif. Ya puedes cerrar esta pestaña.</p>`);
+}
+
+// Las etiquetas GANCHO/DATO/CTA son solo para que el aprobador vea la estructura
+// en el correo — no deben aparecer en el post público de Facebook.
+function stripLabels(text) {
+  return text
+    .split("\n")
+    .map((line) => line.replace(/^\s*(GANCHO|DATO|CTA):\s*/i, ""))
+    .join("\n")
+    .trim();
 }
 
 async function publishToFacebook(env, message) {
