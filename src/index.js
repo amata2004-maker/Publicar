@@ -86,7 +86,7 @@ const CATEGORIES = [
 ];
 
 // Hashtags de marca que van en todos los posts, además de los específicos de la categoría.
-const BRAND_HASHTAGS = "#MyActif #BienesRaíces #PropTech #RentaSegura #MéxicoInmobiliario";
+const BRAND_HASHTAGS = "#MyActif #BienesRaíces #PropTech #RentaSegura #MéxicoInmobiliario #AMPI #AMPINacional";
 
 function escapeHtml(str) {
   return String(str)
