@@ -1,4 +1,4 @@
-import { generateBrandImage } from "./image.js";
+import { generateBrandImage, generateAIImage } from "./image.js";
 
 export default {
   async scheduled(event, env, ctx) {
@@ -39,54 +39,65 @@ const CATEGORIES = [
     name: "Cumplimiento LFPDPPP",
     hook: "Poner a un mal inquilino en el grupo de WhatsApp de asesores no te protege. Te expone.",
     dato: "Compartir datos personales fuera de una plataforma con estructura legal viola la LFPDPPP, sin importar que la información sea cierta.",
-    hashtags: "#LFPDPPP #ProtecciónDeDatos #CumplimientoLegal"
+    hashtags: "#LFPDPPP #ProtecciónDeDatos #CumplimientoLegal",
+    imagePrompt: "Editorial photo of a hand holding a smartphone with a blurred chat app open, next to a printed rental contract on a desk, moody blue and orange cinematic lighting, professional real estate mood, shallow depth of field, no text, no logos, no watermark"
   },
   {
     day: 1,
     name: "Deudas de servicios impagas",
     hook: "Tu inquilino se fue. La deuda de luz y agua se queda con tu nombre.",
     dato: "CFE y organismos de agua pueden generar reportes de cobro a tu domicilio aunque el contrato ya haya terminado.",
-    hashtags: "#CFE #DeudasDeServicios #Propietarios"
+    hashtags: "#CFE #DeudasDeServicios #Propietarios",
+    imagePrompt: "Editorial photo of a stack of overdue utility bills and an electricity meter on a kitchen counter in an empty rented apartment, moody blue and orange cinematic lighting, shallow depth of field, no text, no logos, no watermark"
   },
   {
     day: 2,
     name: "Abuso de propietarios a inquilinos",
     hook: "No todo mal trato viene del inquilino. A veces el propietario cruza la línea.",
     dato: "Retener depósitos sin causa justificada o entrar a la propiedad sin aviso puede constituir violación a derechos del arrendatario.",
-    hashtags: "#DerechosDelInquilino #Arrendamiento #RentaJusta"
+    hashtags: "#DerechosDelInquilino #Arrendamiento #RentaJusta",
+    imagePrompt: "Editorial photo of a house key and a security deposit envelope on a table, a closed apartment door softly lit in the background, moody blue and orange cinematic lighting, tense atmosphere, shallow depth of field, no text, no logos, no watermark, no people"
   },
   {
     day: 3,
     name: "Comisiones no pagadas al asesor",
     hook: "Cerraste el trato. El propietario se saltó al asesor para no pagar comisión.",
     dato: "Es una práctica común en el sector inmobiliario mexicano, y sin registro formal es casi imposible reclamarla.",
-    hashtags: "#AsesorInmobiliario #ComisionesInmobiliarias #SectorInmobiliario"
+    hashtags: "#AsesorInmobiliario #ComisionesInmobiliarias #SectorInmobiliario",
+    imagePrompt: "Editorial photo of a handshake happening in soft focus in the background behind a real estate 'For Rent' sign in sharp focus, moody blue and orange cinematic lighting, shallow depth of field, no text, no logos, no watermark"
   },
   {
     day: 4,
     name: "Identidades falsas",
     hook: "La INE se ve perfecta. La persona detrás, no es quien dice ser.",
     dato: "La suplantación de identidad en rentas va en aumento; la validación biométrica reduce el riesgo desde el primer filtro.",
-    hashtags: "#VerificaciónDeIdentidad #SuplantaciónDeIdentidad #KYC"
+    hashtags: "#VerificaciónDeIdentidad #SuplantaciónDeIdentidad #KYC",
+    imagePrompt: "Editorial photo of a magnifying glass held over a blank generic ID card on a dark desk, subtle glitch and distortion light effect suggesting digital forgery, moody blue and orange cinematic lighting, shallow depth of field, no text, no logos, no watermark, no real faces"
   },
   {
     day: 5,
     name: "Blacklist de inquilinos y compradores",
     hook: "Ese \"buen inquilino\" ya dejó tres propiedades con adeudos en otras zonas.",
     dato: "Sin un registro compartido entre asesores, cada propietario descubre el problema solo, y tarde.",
-    hashtags: "#BuróDeInquilinos #InquilinosMorosos #VerificaciónDeInquilinos"
+    hashtags: "#BuróDeInquilinos #InquilinosMorosos #VerificaciónDeInquilinos",
+    imagePrompt: "Editorial photo of a small red warning flag planted on a miniature model house on a desk, moody blue and orange cinematic lighting, shallow depth of field, no text, no logos, no watermark"
   },
   {
     day: 6,
     name: "Seguridad del asesor en visitas",
     hook: "Ir solo a mostrar una propiedad a un desconocido es un riesgo que el sector normalizó.",
     dato: "Los asesores inmobiliarios están entre los perfiles más expuestos a agresión en citas de trabajo.",
-    hashtags: "#SeguridadInmobiliaria #AsesoresInmobiliarios #ProtegeAlAsesor"
+    hashtags: "#SeguridadInmobiliaria #AsesoresInmobiliarios #ProtegeAlAsesor",
+    imagePrompt: "Editorial photo of an open front door of an empty apartment for showing, seen from behind at dusk, a single silhouette waiting outside, moody blue and orange cinematic lighting, tense atmosphere, shallow depth of field, no text, no logos, no watermark"
   }
 ];
 
 // Hashtags de marca que van en todos los posts, además de los específicos de la categoría.
 const BRAND_HASHTAGS = "#MyActif #BienesRaíces #PropTech #RentaSegura #MéxicoInmobiliario #AMPI #AMPINacional";
+
+// Días con imagen llamativa generada por IA en vez de la tarjeta de marca (0=domingo).
+// Martes = 2, Sábado = 6.
+const AI_IMAGE_DAYS = [2, 6];
 
 function escapeHtml(str) {
   return String(str)
@@ -111,6 +122,8 @@ async function handleDailyPost(env) {
       text: draft,
       category: category.name,
       hashtags: `${category.hashtags} ${BRAND_HASHTAGS}`,
+      day: category.day,
+      imagePrompt: category.imagePrompt,
       status: "pending",
       createdAt: today.toISOString()
     }),
@@ -210,6 +223,14 @@ async function handleImage(request, env) {
   const token = url.searchParams.get("token");
   const draft = await getDraft(env, token);
   if (!draft) return new Response("Post no encontrado o expirado", { status: 404 });
+
+  if (AI_IMAGE_DAYS.includes(draft.day) && draft.imagePrompt) {
+    try {
+      return await generateAIImage(env, draft.imagePrompt);
+    } catch (err) {
+      console.error("generateAIImage failed, usando tarjeta de marca de respaldo:", err);
+    }
+  }
 
   return generateBrandImage(extractHook(draft.text));
 }

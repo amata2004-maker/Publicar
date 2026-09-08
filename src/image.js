@@ -14,6 +14,26 @@ async function loadLogoDataUri() {
   return `data:image/png;base64,${btoa(binary)}`;
 }
 
+// Imagen llamativa generada por IA (martes/sábado) en vez de la tarjeta de marca.
+// Usa Workers AI — no necesita un secreto/API key aparte, se cobra a la cuenta de Cloudflare.
+export async function generateAIImage(env, prompt) {
+  const response = await env.AI.run("@cf/black-forest-labs/flux-1-schnell", {
+    prompt,
+    steps: 8
+  });
+
+  // flux-1-schnell responde { image: "<png en base64>" }; otros modelos de
+  // Workers AI regresan los bytes binarios directo — cubrimos ambos casos.
+  if (response && typeof response.image === "string") {
+    const binary = atob(response.image);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Response(bytes, { headers: { "Content-Type": "image/png" } });
+  }
+
+  return new Response(response, { headers: { "Content-Type": "image/png" } });
+}
+
 // Satori (usado por workers-og) no tiene acceso a fuentes del sistema —
 // hay que traerlas nosotros. Google sirve TTF en vez de WOFF2 si el
 // User-Agent parece un navegador viejo; Satori solo entiende TTF/OTF/WOFF.

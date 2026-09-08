@@ -11,8 +11,13 @@ para aprobar, y al aprobar lo publica en Facebook (e Instagram si está configur
    si configuraste `IG_USER_ID`).
 4. Si no apruebas en 3 días, el borrador expira solo.
 
-La imagen se genera al vuelo en el Worker (`src/image.js`, con `workers-og`) a
-partir del GANCHO del post — no depende de un modelo de imagen por publicación.
+La imagen se genera al vuelo en el Worker (`src/image.js`). La mayoría de los
+días es la tarjeta de marca (con `workers-og`, a partir del GANCHO). Martes y
+sábado (`AI_IMAGE_DAYS` en `src/index.js`) se genera en su lugar una foto
+editorial con Workers AI (`@cf/black-forest-labs/flux-1-schnell`), relacionada
+al tema de esa categoría — no necesita secreto/API key aparte, solo el binding
+`[ai]` en `wrangler.toml`. Si la generación con IA falla, cae de vuelta a la
+tarjeta de marca automáticamente.
 
 ## Setup
 

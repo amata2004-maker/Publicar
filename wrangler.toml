@@ -9,3 +9,7 @@ crons = ["0 13 * * *"]
 [[kv_namespaces]]
 binding = "POSTS_KV"
 id = "01c9107a2a9c460cb18c36e9d0541153"
+
+# Genera las imágenes llamativas de martes/sábado (Workers AI, sin secreto aparte).
+[ai]
+binding = "AI"
