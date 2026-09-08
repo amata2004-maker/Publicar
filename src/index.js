@@ -257,12 +257,15 @@ async function handleApprovePreview(request, env) {
   if (draft.status === "published") {
     return htmlPage(`<p>Este post ya fue publicado el ${escapeHtml(draft.publishedAt)}.</p>`);
   }
+  if (draft.status === "publishing") {
+    return htmlPage(`<p>Este post se está publicando en este momento — espera unos segundos y revisa la página, no hace falta reintentar.</p>`);
+  }
 
   return htmlPage(`
     <h2>Categoría: ${escapeHtml(draft.category)}</h2>
     <p style="white-space:pre-line">${escapeHtml(draft.text)}</p>
     <p style="color:#2F69D5">${escapeHtml(draft.hashtags || "")}</p>
-    <form method="POST" action="/approve?token=${encodeURIComponent(token)}">
+    <form method="POST" action="/approve?token=${encodeURIComponent(token)}" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Publicando…';">
       <button type="submit" style="background:#2F69D5;color:white;padding:10px 20px;border:none;border-radius:6px;font-size:16px;cursor:pointer;">Confirmar y publicar</button>
     </form>
   `);
@@ -280,6 +283,15 @@ async function handleApproveConfirm(request, env) {
   if (draft.status === "published") {
     return htmlPage(`<p>Este post ya fue publicado.</p>`);
   }
+  if (draft.status === "publishing") {
+    return htmlPage(`<p>Ya se está publicando este post (puede que le hayas dado clic dos veces) — no hace falta reintentar.</p>`);
+  }
+
+  // Se marca "publishing" antes de llamar a las APIs para reducir la ventana de
+  // doble clic / doble submit: una segunda petición casi simultánea encuentra
+  // este estado en vez de "pending" y no publica dos veces.
+  draft.status = "publishing";
+  await env.POSTS_KV.put(`draft:${token}`, JSON.stringify(draft));
 
   const imageUrl = `${env.WORKER_URL}/image?token=${encodeURIComponent(token)}`;
   const caption = draft.hashtags ? `${stripLabels(draft.text)}\n\n${draft.hashtags}` : stripLabels(draft.text);
@@ -288,6 +300,8 @@ async function handleApproveConfirm(request, env) {
     await publishToFacebook(env, imageUrl, caption);
   } catch (err) {
     console.error("publishToFacebook failed:", err);
+    draft.status = "pending";
+    await env.POSTS_KV.put(`draft:${token}`, JSON.stringify(draft));
     return htmlPage(`<p>No se pudo publicar en Facebook: ${escapeHtml(err.message)}</p><p>El post sigue pendiente, puedes intentar de nuevo.</p>`);
   }
 
