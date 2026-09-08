@@ -2,6 +2,17 @@ import { ImageResponse } from "workers-og";
 
 const BLUE = "#3D5FE0";
 const ORANGE = "#E8784A";
+const LOGO_URL = "https://raw.githubusercontent.com/amata2004-maker/publicar/main/logo.png";
+const LOGO_WIDTH = 340;
+const LOGO_HEIGHT = 152; // proporción real del logo: 406x181
+
+async function loadLogoDataUri() {
+  const res = await fetch(LOGO_URL);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return `data:image/png;base64,${btoa(binary)}`;
+}
 
 // Satori (usado por workers-og) no tiene acceso a fuentes del sistema —
 // hay que traerlas nosotros. Google sirve TTF en vez de WOFF2 si el
@@ -29,7 +40,10 @@ async function loadGoogleFont(text) {
 }
 
 export async function generateBrandImage(hookText) {
-  const fonts = await loadGoogleFont(`MyActif${hookText}myactif.com · Diagnóstico gratuito`);
+  const [fonts, logoDataUri] = await Promise.all([
+    loadGoogleFont(`${hookText}myactif.com · Diagnóstico gratuito`),
+    loadLogoDataUri()
+  ]);
 
   return new ImageResponse(
     {
@@ -47,24 +61,12 @@ export async function generateBrandImage(hookText) {
         },
         children: [
           {
-            type: "div",
+            type: "img",
             props: {
-              style: {
-                display: "flex",
-                alignItems: "baseline",
-                fontSize: "44px",
-                letterSpacing: "1px"
-              },
-              children: [
-                {
-                  type: "span",
-                  props: { style: { color: "#FFFFFF", fontWeight: 400 }, children: "My" }
-                },
-                {
-                  type: "span",
-                  props: { style: { color: "#FFFFFF", fontWeight: 700 }, children: "Actif" }
-                }
-              ]
+              src: logoDataUri,
+              width: LOGO_WIDTH,
+              height: LOGO_HEIGHT,
+              style: { display: "flex" }
             }
           },
           {
