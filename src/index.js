@@ -38,45 +38,55 @@ const CATEGORIES = [
     day: 0,
     name: "Cumplimiento LFPDPPP",
     hook: "Poner a un mal inquilino en el grupo de WhatsApp de asesores no te protege. Te expone.",
-    dato: "Compartir datos personales fuera de una plataforma con estructura legal viola la LFPDPPP, sin importar que la información sea cierta."
+    dato: "Compartir datos personales fuera de una plataforma con estructura legal viola la LFPDPPP, sin importar que la información sea cierta.",
+    hashtags: "#LFPDPPP #ProtecciónDeDatos #CumplimientoLegal"
   },
   {
     day: 1,
     name: "Deudas de servicios impagas",
     hook: "Tu inquilino se fue. La deuda de luz y agua se queda con tu nombre.",
-    dato: "CFE y organismos de agua pueden generar reportes de cobro a tu domicilio aunque el contrato ya haya terminado."
+    dato: "CFE y organismos de agua pueden generar reportes de cobro a tu domicilio aunque el contrato ya haya terminado.",
+    hashtags: "#CFE #DeudasDeServicios #Propietarios"
   },
   {
     day: 2,
     name: "Abuso de propietarios a inquilinos",
     hook: "No todo mal trato viene del inquilino. A veces el propietario cruza la línea.",
-    dato: "Retener depósitos sin causa justificada o entrar a la propiedad sin aviso puede constituir violación a derechos del arrendatario."
+    dato: "Retener depósitos sin causa justificada o entrar a la propiedad sin aviso puede constituir violación a derechos del arrendatario.",
+    hashtags: "#DerechosDelInquilino #Arrendamiento #RentaJusta"
   },
   {
     day: 3,
     name: "Comisiones no pagadas al asesor",
     hook: "Cerraste el trato. El propietario se saltó al asesor para no pagar comisión.",
-    dato: "Es una práctica común en el sector inmobiliario mexicano, y sin registro formal es casi imposible reclamarla."
+    dato: "Es una práctica común en el sector inmobiliario mexicano, y sin registro formal es casi imposible reclamarla.",
+    hashtags: "#AsesorInmobiliario #ComisionesInmobiliarias #SectorInmobiliario"
   },
   {
     day: 4,
     name: "Identidades falsas",
     hook: "La INE se ve perfecta. La persona detrás, no es quien dice ser.",
-    dato: "La suplantación de identidad en rentas va en aumento; la validación biométrica reduce el riesgo desde el primer filtro."
+    dato: "La suplantación de identidad en rentas va en aumento; la validación biométrica reduce el riesgo desde el primer filtro.",
+    hashtags: "#VerificaciónDeIdentidad #SuplantaciónDeIdentidad #KYC"
   },
   {
     day: 5,
     name: "Blacklist de inquilinos y compradores",
     hook: "Ese \"buen inquilino\" ya dejó tres propiedades con adeudos en otras zonas.",
-    dato: "Sin un registro compartido entre asesores, cada propietario descubre el problema solo, y tarde."
+    dato: "Sin un registro compartido entre asesores, cada propietario descubre el problema solo, y tarde.",
+    hashtags: "#BuróDeInquilinos #InquilinosMorosos #VerificaciónDeInquilinos"
   },
   {
     day: 6,
     name: "Seguridad del asesor en visitas",
     hook: "Ir solo a mostrar una propiedad a un desconocido es un riesgo que el sector normalizó.",
-    dato: "Los asesores inmobiliarios están entre los perfiles más expuestos a agresión en citas de trabajo."
+    dato: "Los asesores inmobiliarios están entre los perfiles más expuestos a agresión en citas de trabajo.",
+    hashtags: "#SeguridadInmobiliaria #AsesoresInmobiliarios #ProtegeAlAsesor"
   }
 ];
+
+// Hashtags de marca que van en todos los posts, además de los específicos de la categoría.
+const BRAND_HASHTAGS = "#MyActif #BienesRaíces #PropTech #RentaSegura #MéxicoInmobiliario";
 
 function escapeHtml(str) {
   return String(str)
@@ -100,6 +110,7 @@ async function handleDailyPost(env) {
     JSON.stringify({
       text: draft,
       category: category.name,
+      hashtags: `${category.hashtags} ${BRAND_HASHTAGS}`,
       status: "pending",
       createdAt: today.toISOString()
     }),
@@ -229,6 +240,7 @@ async function handleApprovePreview(request, env) {
   return htmlPage(`
     <h2>Categoría: ${escapeHtml(draft.category)}</h2>
     <p style="white-space:pre-line">${escapeHtml(draft.text)}</p>
+    <p style="color:#2F69D5">${escapeHtml(draft.hashtags || "")}</p>
     <form method="POST" action="/approve?token=${encodeURIComponent(token)}">
       <button type="submit" style="background:#2F69D5;color:white;padding:10px 20px;border:none;border-radius:6px;font-size:16px;cursor:pointer;">Confirmar y publicar</button>
     </form>
@@ -249,7 +261,7 @@ async function handleApproveConfirm(request, env) {
   }
 
   const imageUrl = `${env.WORKER_URL}/image?token=${encodeURIComponent(token)}`;
-  const caption = stripLabels(draft.text);
+  const caption = draft.hashtags ? `${stripLabels(draft.text)}\n\n${draft.hashtags}` : stripLabels(draft.text);
 
   try {
     await publishToFacebook(env, imageUrl, caption);
