@@ -13,3 +13,8 @@ id = "01c9107a2a9c460cb18c36e9d0541153"
 # Genera las imágenes llamativas de martes/sábado (Workers AI, sin secreto aparte).
 [ai]
 binding = "AI"
+
+# Logs persistentes en el dashboard de Cloudflare — para poder diagnosticar
+# si el cron diario falla en silencio (scheduled() solo hace console.error).
+[observability]
+enabled = true
